@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#15346b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="イルカの上海">
+<title>イルカの上海 〜通信工事するイルカ〜</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header id="top">
+    <button id="bPause" class="hbtn" aria-label="一時停止"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="5" height="16" rx="1.5"/><rect x="14" y="4" width="5" height="16" rx="1.5"/></svg><small>停止</small></button>
+    <div id="title"><span id="lvl">レベル 1</span><span id="lname"></span></div>
+    <div id="stats">
+      <div class="stat"><small>残り</small><b id="left">0</b></div>
+      <div class="stat"><small>取れる組</small><b id="moves">0</b></div>
+      <div class="stat"><small>時間</small><b id="time">0:00</b></div>
+    </div>
+    <button id="bZoom" class="hbtn" aria-label="拡大・全体表示"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5" fill="none" stroke-width="2.8"/><path d="M15 15l6 6" stroke-width="3.4" stroke-linecap="round"/><path id="zoomPlus" d="M7 10h6M10 7v6" stroke-width="2.4" stroke-linecap="round"/></svg><small id="zoomL">拡大</small></button>
+  </header>
+  <main id="board" aria-label="盤面"></main>
+  <div id="slots" aria-label="スロット"></div>
+  <nav id="bar">
+    <button id="bHint" class="btn"><span class="ic">？</span><span>ヒント</span></button>
+    <button id="bUndo" class="btn"><span class="ic">↶</span><span>もどす</span></button>
+    <button id="bMagnet" class="btn"><span class="ic"><svg class="mag" viewBox="0 0 32 32" aria-hidden="true"><path d="M7 4h6v12a3 3 0 0 0 6 0V4h6v12a9 9 0 0 1-18 0Z" fill="#c8321e" stroke="#7a1a10" stroke-width="1.5" stroke-linejoin="round"/><rect x="7" y="4" width="6" height="5" fill="#d9dde3" stroke="#6b7280" stroke-width="1.2"/><rect x="19" y="4" width="6" height="5" fill="#d9dde3" stroke="#6b7280" stroke-width="1.2"/></svg></span><span>磁石<small id="magN">3</small></span></button>
+    <button id="bShuffle" class="btn"><span class="ic">⇄</span><span>まぜる</span></button>
+    <button id="bMenu" class="btn"><span class="ic">≡</span><span>メニュー</span></button>
+  </nav>
+  <div id="toast" role="status"></div>
+  <div id="pal" aria-hidden="true"></div>
+  <div id="banner" aria-live="polite"></div>
+
+  <div class="overlay title" id="ovTitle">
+    <div class="panel center">
+      <div class="mascot" id="mascotTitle"></div>
+      <h1 class="appname">イルカの上海</h1>
+      <p class="subtitle">〜通信工事するイルカ〜</p>
+      <p class="tagline">ペアをつないで盤面を「開通」させよう。<br>広告なし・電波がなくても遊べます。</p>
+      <button class="big" id="tStart">はじめる</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="ovMenu" hidden>
+    <div class="panel">
+      <h2>メニュー</h2>
+      <button class="big" id="mRestart">このレベルを最初から</button>
+      <button class="big" id="mNew">新しい配置で遊ぶ</button>
+      <button class="big orange" id="mRank">自分ランキング（上海IQ）</button>
+      <h3>盤面をえらぶ</h3>
+      <div id="layoutList"></div>
+      <h3>見やすさ</h3>
+      <label class="toggle"><input type="checkbox" id="optDim"> 取れない牌を暗くする</label>
+      <label class="toggle"><input type="checkbox" id="optNum"> 筒子・索子に漢数字を表示</label>
+      <label class="toggle"><input type="checkbox" id="optZoom"> 牌が小さい盤は自動で拡大（🔍で切替）</label>
+      <label class="toggle"><input type="checkbox" id="optSound"> 効果音</label>
+      <h3>ルール</h3>
+      <label class="toggle"><input type="checkbox" id="optStrict"> 季節・花は同じ絵どうしだけ</label>
+      <p class="note">オフ（ふつう）：<b class="kx">季</b>の牌（春夏秋冬）はどれ同士でも、<b class="kf">花</b>の牌（梅蘭菊竹）はどれ同士でも消せます。</p>
+      <button class="big ghost" id="mTitle">タイトルにもどる</button>
+      <button class="big ghost" id="mClose">閉じる</button>
+    </div>
+  </div>
+
+  <div class="overlay pause" id="ovPause" hidden>
+    <div class="panel center">
+      <div class="mascot small" id="pauseStamp"></div>
+      <h2>一時停止中</h2>
+      <p class="note" id="pauseInfo"></p>
+      <button class="big" id="pResume">再開</button>
+      <button class="big ghost" id="pRestart">やり直し</button>
+      <button class="big ghost" id="pTitle">タイトルへ</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="ovEnd" hidden>
+    <div class="panel center">
+      <h2 id="endTitle"></h2>
+      <div id="endMsg"></div>
+      <div id="endBtns"></div>
+    </div>
+  </div>
+</div>
+<script src="game.js"></script>
+<script>
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+</script>
+</body>
+</html>
