@@ -22,3 +22,4 @@ Android は Chrome で開いて「ホーム画面に追加」（またはイン�
 広告・解析・外部通信はありません。セーブデータは端末のブラウザ内（localStorage）にのみ保存されます。
 
 マスコットのイルカのイラストは作者の著作物です。
+公開ページ: https://o52dagaya-maker.github.io/iruka-shanghai/
