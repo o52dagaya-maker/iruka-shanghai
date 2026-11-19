@@ -564,14 +564,40 @@ function shuffleRemaining(silent) {
 let AC = null;
 // iOS Safari: audio may only start inside a user gesture. Create/resume the context and play a silent buffer
 // on the first touch (and again after the app returns from background, when iOS suspends/"interrupts" it).
+// iPhone/iPad: Web Audio is "ambient" by default, so the hardware silent (ring/mute) switch mutes ALL game sound
+// and BGM. Safari 16.4+/17: ask for a "playback" audio session. Older real iOS WebKit only: fall back to a tiny silent
+// looping <audio> element started inside a tap. Web only (the APK is file:// and never runs this); every step is guarded.
+const IOS = location.protocol !== 'file:' && (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+const IOS_REAL = IOS && typeof navigator.standalone === 'boolean'; // real iOS/iPadOS WebKit (Safari, home-screen app, in-app browsers); emulators lack it
+let iosEl = null, iosElFailed = false;
+function iosSession() {
+  if (!IOS) return;
+  try { if (navigator.audioSession) { if (navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; return; } } catch (e) {}
+  if (!IOS_REAL || iosElFailed || document.hidden) return;
+  try {
+    if (!iosEl) { // created lazily on the first tap: 0.25 s of 8 kHz 8-bit silence (2 KB in-memory WAV, no file, no network)
+      const n = 2000, b = new Uint8Array(44 + n), v = new DataView(b.buffer), w = (o, s) => { for (let i = 0; i < s.length; i++) b[o + i] = s.charCodeAt(i); };
+      w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true); w(36, 'data'); v.setUint32(40, n, true); b.fill(128, 44);
+      let s = ''; for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+      const el = document.createElement('audio'); el.setAttribute('playsinline', ''); el.setAttribute('x-webkit-airplay', 'deny');
+      el.preload = 'none'; el.loop = true; el.muted = false; el.onerror = () => { iosElFailed = true; };
+      el.src = 'data:audio/wav;base64,' + btoa(s); iosEl = el;
+    }
+    if (iosEl.paused) { const p = iosEl.play(); if (p && p.catch) p.catch(() => {}); }
+  } catch (e) { iosElFailed = true; }
+}
+function iosSessionSleep() { try { if (iosEl && !iosEl.paused) iosEl.pause(); } catch (e) {} }
 function unlockAudio() {
+  iosSession();
   try {
     if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
-    if (AC.state !== 'running') { const pr = AC.resume(); if (pr && pr.catch) pr.catch(() => {}); }
+    if (AC.state !== 'running') { const pr = AC.resume(); if (pr && pr.then) pr.then(() => bgmTick(), () => {}); }
     const b = AC.createBuffer(1, 1, 22050), src = AC.createBufferSource(); src.buffer = b; src.connect(AC.destination); src.start(0);
   } catch (e) {}
 }
-['touchend', 'pointerdown', 'keydown'].forEach(t => document.addEventListener(t, () => { if (!AC || AC.state !== 'running') unlockAudio(); }, { passive: true, capture: true }));
+// every gesture: (re)unlock if the context isn't running (first tap, after background, iOS "interrupted"), keep the iOS session alive
+['touchend', 'pointerdown', 'keydown', 'click'].forEach(t => document.addEventListener(t, () => { if (!AC || AC.state !== 'running') { unlockAudio(); setTimeout(bgmTick, 0); } else if (IOS_REAL && !navigator.audioSession && !iosElFailed && (!iosEl || iosEl.paused)) iosSession(); }, { passive: true, capture: true }));
 /* ---------------- BGM (old-jazz, synthesized by the music engine) ---------------- */
 const MUS = window.IrukaMusic || null;
 let bgmClearDone = null; // the game whose clear jingle has finished
@@ -769,11 +795,14 @@ window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(layo
 if (window.ResizeObserver) new ResizeObserver(() => { clearTimeout(rT); rT = setTimeout(layout, 60); }).observe(board);
 // auto-pause when the app goes to the background
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { if (MUS) MUS.stop(true); try { if (AC && AC.state === 'running') AC.suspend(); } catch (e) {} }
+  if (document.hidden) { if (MUS) MUS.stop(true); iosSessionSleep(); try { if (AC && AC.state === 'running') AC.suspend(); } catch (e) {} }
+  else { try { if (AC && AC.state !== 'running') { const pr = AC.resume(); if (pr && pr.then) pr.then(() => bgmTick(), () => {}); } } catch (e) {} } // the next tap retries if iOS refuses
   if (document.hidden && S) { pause(); save(); }
 });
 
 /* ---------------- start ---------------- */
+const VERSION = '1.6.1';
+(() => { const v = document.getElementById('tVer'); if (v) v.textContent = `v${VERSION}・${location.protocol === 'file:' ? 'アプリ版' : 'WEB版'}${MUS ? '・BGMあり' : ''}`; })();
 loadOpts();
 let saved = null;
 try { saved = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) {}
@@ -785,5 +814,5 @@ requestAnimationFrame(() => {
 });
 
 // test hook (used by automated tests; harmless for players)
-window.__shanghai = { get bgm() { return MUS ? MUS.current : 'none'; }, bgmTick, get audioState() { return AC ? AC.state : "none"; }, pause, resume, setZoom, toggleZoom, get tileW() { return layout.W; }, get fitW() { return layout.fit; }, tapSlot, park, magnet, banner, get selSlot() { return selSlot; }, get sel() { return sel; }, SLOTS, pal, showTitle, shanghaiIQ, loadRank, showRanking, get S() { return S; }, get lastOrder() { return lastOrder; }, opts, group, faceSVG, save, LAYOUTS, movePairs, tap, newGame, shuffleRemaining, undo, isFreeAt: i => isFree(NB, S.alive, i) };
+window.__shanghai = { version: VERSION, get bgm() { return MUS ? MUS.current : 'none'; }, bgmTick, get audioState() { return AC ? AC.state : "none"; }, get iosAudio() { return { ios: IOS, session: navigator.audioSession ? navigator.audioSession.type : null, el: iosEl ? (iosEl.paused ? 'paused' : 'playing') : null }; }, pause, resume, setZoom, toggleZoom, get tileW() { return layout.W; }, get fitW() { return layout.fit; }, tapSlot, park, magnet, banner, get selSlot() { return selSlot; }, get sel() { return sel; }, SLOTS, pal, showTitle, shanghaiIQ, loadRank, showRanking, get S() { return S; }, get lastOrder() { return lastOrder; }, opts, group, faceSVG, save, LAYOUTS, movePairs, tap, newGame, shuffleRemaining, undo, isFreeAt: i => isFree(NB, S.alive, i) };
 })();

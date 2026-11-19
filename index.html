@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=1.6.1">
 </head>
 <body>
 <div id="app">
@@ -46,6 +46,7 @@
       <p class="subtitle">〜通信工事するイルカ〜</p>
       <p class="tagline">ペアをつないで盤面を「開通」させよう。<br>広告なし・電波がなくても遊べます。</p>
       <button class="big" id="tStart">はじめる</button>
+      <p class="ver" id="tVer"></p>
     </div>
   </div>
 
@@ -91,11 +92,21 @@
     </div>
   </div>
 </div>
-<script src="music.js"></script>
-<script src="game.js"></script>
+<script src="music.js?v=1.6.1"></script>
+<script src="game.js?v=1.6.1"></script>
 <script>
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  // always check for a new version (bypassing the HTTP cache) and switch to it as soon as it is installed
+  const hadSW = !!navigator.serviceWorker.controller; let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadSW || reloaded) return; reloaded = true;
+    try { window.__shanghai && window.__shanghai.save(); } catch (e) {}
+    location.reload();
+  });
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => {
+    r.update().catch(() => {});
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); });
+  }).catch(() => {}));
 }
 </script>
 </body>

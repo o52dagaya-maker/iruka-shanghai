@@ -189,3 +189,6 @@ table.rank tr.me td{background:#fff1a8;font-weight:800}
 
 .vol{display:flex;align-items:center;gap:12px;font-size:18px;font-weight:700;margin:6px 2px 10px}
 .vol input{flex:1;height:32px;accent-color:#c8321e}
+
+/* version line on the title (helps spot an old cached copy) */
+.title .ver { margin: 10px 0 0; font-size: 12px; opacity: .6; letter-spacing: .02em; }
