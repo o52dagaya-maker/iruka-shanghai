@@ -1,5 +1,5 @@
-const CACHE = 'nonbiri-shanghai-v7';
-const FILES = ['./', 'index.html', 'style.css', 'game.js', 'manifest.webmanifest',
+const CACHE = 'nonbiri-shanghai-v8';
+const FILES = ['./', 'index.html', 'style.css', 'game.js', 'music.js', 'manifest.webmanifest',
   'img/st/anzendaiichi.webp', 'img/st/arigato.webp', 'img/st/chui.webp', 'img/st/hokoku.webp', 'img/st/kakunin.webp', 'img/st/kanryo.webp', 'img/st/kyukei.webp', 'img/st/modorimashita.webp', 'img/st/ohayo.webp', 'img/st/osakini.webp', 'img/st/otsukare.webp', 'img/st/ryokai.webp', 'img/st/shinkochu.webp', 'img/st/shochi.webp', 'img/st/shuppatsu.webp', 'img/st/taio.webp', 'img/st/tochaku.webp', 'img/st/yoroshiku.webp', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {

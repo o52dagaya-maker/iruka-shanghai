@@ -186,3 +186,6 @@ table.rank tr.me td{background:#fff1a8;font-weight:800}
   .slot{height:auto}
   .stile{height:auto;width:78%}
 }
+
+.vol{display:flex;align-items:center;gap:12px;font-size:18px;font-weight:700;margin:6px 2px 10px}
+.vol input{flex:1;height:32px;accent-color:#c8321e}

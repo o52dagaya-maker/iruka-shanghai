@@ -298,13 +298,15 @@ function newGame(layoutIdx, level) {
   const faces = solvableAssign(nb, tiles.length, idxs, pairs, 2000);
   S = { v: 1, strict, layout: layoutIdx, level, tiles, faces: tiles.map((_, i) => faces[i]), alive: tiles.map(() => true),
         hist: [], time: 0, done: false, initFaces: null, aid: { h: 0, u: 0, s: 0, m: 0, k: 0 },
-        held: Array.from({ length: SLOTS }, () => []), magnet: MAGNETS, zoom: 0 };
+        held: Array.from({ length: SLOTS }, () => []), magnet: MAGNETS, zoom: 0, bgm: nextBgm() };
   S.initFaces = S.faces.slice();
   S.zoom = autoZoom();
   NB = nb; sel = -1; selSlot = -1; hintPair = null;
   build(); save(); hideOv();
   if (titleHidden()) banner();
 }
+// alternate the two play tunes game by game, so the same song doesn't repeat every time
+function nextBgm() { return S && S.bgm === 'play1' ? 'play2' : 'play1'; }
 function restartSame() {
   S.faces = S.initFaces.slice(); S.alive = S.tiles.map(() => true); S.hist = []; S.time = 0; S.done = false; S.aid = { h: 0, u: 0, s: 0, m: 0, k: 0 };
   S.held = Array.from({ length: SLOTS }, () => []); S.magnet = MAGNETS;
@@ -570,6 +572,26 @@ function unlockAudio() {
   } catch (e) {}
 }
 ['touchend', 'pointerdown', 'keydown'].forEach(t => document.addEventListener(t, () => { if (!AC || AC.state !== 'running') unlockAudio(); }, { passive: true, capture: true }));
+/* ---------------- BGM (old-jazz, synthesized by the music engine) ---------------- */
+const MUS = window.IrukaMusic || null;
+let bgmClearDone = null; // the game whose clear jingle has finished
+function bgmWanted() {
+  if (!S || !$('ovPause').hidden) return null;
+  if (!$('ovTitle').hidden) return 'title';
+  if (S.done) return bgmClearDone === S ? 'title' : 'clear';
+  return S.bgm || (S.layout % 2 ? 'play2' : 'play1');
+}
+function bgmTick() {
+  if (!MUS) return;
+  const on = opts.bgm !== false && AC && AC.state === 'running' && !document.hidden;
+  if (!on) { if (MUS.current) MUS.stop(true); return; }
+  MUS.attach(AC); MUS.setVolume(typeof opts.bgmVol === 'number' ? opts.bgmVol : .5); MUS.setDuck($('ovMenu').hidden ? 1 : .45);
+  const w = bgmWanted();
+  if (!w) { if (MUS.current) MUS.stop(); return; }
+  if (w === 'clear') { if (MUS.current !== 'clear') { const G = S; MUS.play('clear', () => { bgmClearDone = G; }); } return; }
+  MUS.play(w);
+}
+setInterval(bgmTick, 300);
 // iOS ignores user-scalable=no: block page pinch-zoom gestures (the zoomed board pans natively; 🔍 does the zooming)
 ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));
 function sfx(kind) {
@@ -693,7 +715,7 @@ function openMenu() {
     b.innerHTML = `${L.name}<small>${L.build().length}枚</small>`;
     b.onclick = () => newGame(i, S.level); list.appendChild(b);
   });
-  $('optZoom').checked = opts.autoZoom !== false; $('optDim').checked = !!opts.dim; $('optNum').checked = !!opts.nums; $('optStrict').checked = !!opts.strict; $('optSound').checked = opts.sound !== false;
+  $('optZoom').checked = opts.autoZoom !== false; $('optDim').checked = !!opts.dim; $('optNum').checked = !!opts.nums; $('optStrict').checked = !!opts.strict; $('optSound').checked = opts.sound !== false; $('optBgm').checked = opts.bgm !== false; $('optBgmVol').value = Math.round((typeof opts.bgmVol === 'number' ? opts.bgmVol : .5) * 100);
   $('ovMenu').hidden = false; pal('kyukei');
 }
 /* ---------------- pause ---------------- */
@@ -703,7 +725,7 @@ function pause() {
   sel = -1; selSlot = -1; hintPair = null; refresh();
   $('pauseStamp').innerHTML = stampImg('kyukei');
   $('pauseInfo').innerHTML = `${LAYOUTS[S.layout].name}・のこり ${S.alive.filter(Boolean).length + heldCount()}枚<br>時間 <b>${fmt(S.time)}</b> で止まっています`;
-  $('ovPause').hidden = false; document.body.classList.add('paused'); save();
+  $('ovPause').hidden = false; document.body.classList.add('paused'); save(); if (MUS) MUS.stop(true);
   return true;
 }
 function resume() { if ($('ovPause').hidden) return; $('ovPause').hidden = true; document.body.classList.remove('paused'); pal('modorimashita', 1500, true); }
@@ -725,6 +747,8 @@ $('mClose').onclick = () => { hideOv(); pal('modorimashita'); }; $('mRank').oncl
 $('optDim').onchange = e => { opts.dim = e.target.checked; saveOpts(); board.classList.toggle('dim', opts.dim); };
 $('optZoom').onchange = e => { opts.autoZoom = e.target.checked; saveOpts(); if (S) setZoom(e.target.checked ? autoZoom() : 0); };
 $('optSound').onchange = e => { opts.sound = e.target.checked; saveOpts(); sfx('sel'); };
+$('optBgm').onchange = e => { opts.bgm = e.target.checked; saveOpts(); if (e.target.checked) unlockAudio(); bgmTick(); };
+$('optBgmVol').oninput = e => { opts.bgmVol = +e.target.value / 100; saveOpts(); if (MUS) MUS.setVolume(opts.bgmVol); };
 $('optStrict').onchange = e => {
   opts.strict = e.target.checked; saveOpts();
   if (!!S.strict === opts.strict) return;
@@ -744,7 +768,10 @@ window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(layo
 // slots row height can change with orientation; keep board fitted
 if (window.ResizeObserver) new ResizeObserver(() => { clearTimeout(rT); rT = setTimeout(layout, 60); }).observe(board);
 // auto-pause when the app goes to the background
-document.addEventListener('visibilitychange', () => { if (document.hidden && S) { pause(); save(); } });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { if (MUS) MUS.stop(true); try { if (AC && AC.state === 'running') AC.suspend(); } catch (e) {} }
+  if (document.hidden && S) { pause(); save(); }
+});
 
 /* ---------------- start ---------------- */
 loadOpts();
@@ -758,5 +785,5 @@ requestAnimationFrame(() => {
 });
 
 // test hook (used by automated tests; harmless for players)
-window.__shanghai = { get audioState() { return AC ? AC.state : "none"; }, pause, resume, setZoom, toggleZoom, get tileW() { return layout.W; }, get fitW() { return layout.fit; }, tapSlot, park, magnet, banner, get selSlot() { return selSlot; }, get sel() { return sel; }, SLOTS, pal, showTitle, shanghaiIQ, loadRank, showRanking, get S() { return S; }, get lastOrder() { return lastOrder; }, opts, group, faceSVG, save, LAYOUTS, movePairs, tap, newGame, shuffleRemaining, undo, isFreeAt: i => isFree(NB, S.alive, i) };
+window.__shanghai = { get bgm() { return MUS ? MUS.current : 'none'; }, bgmTick, get audioState() { return AC ? AC.state : "none"; }, pause, resume, setZoom, toggleZoom, get tileW() { return layout.W; }, get fitW() { return layout.fit; }, tapSlot, park, magnet, banner, get selSlot() { return selSlot; }, get sel() { return sel; }, SLOTS, pal, showTitle, shanghaiIQ, loadRank, showRanking, get S() { return S; }, get lastOrder() { return lastOrder; }, opts, group, faceSVG, save, LAYOUTS, movePairs, tap, newGame, shuffleRemaining, undo, isFreeAt: i => isFree(NB, S.alive, i) };
 })();
