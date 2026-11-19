@@ -34,7 +34,7 @@ function arrange(tr) {
   const choruses = tr.lead2 ? 2 : 1, total = beats * choruses;
   for (let ch = 0; ch < choruses; ch++) {
     const o = ch * beats, lead = ch ? tr.lead2 : tr.lead, oct = (ch ? tr.oct2 : tr.oct) || 0;
-    tr.melody.notes.forEach(n => ev.push({ t: o + n.t, i: lead, m: n.m + T + oct, d: n.d, v: ch ? .8 : .9 }));
+    tr.melody.notes.forEach(n => ev.push({ t: o + n.t, i: lead, m: n.m + T + oct, d: n.d, v: (ch ? .8 : .9) * (tr.lv || 1) }));
     if (tr.counter) tr.counter.notes.forEach(n => ev.push({ t: o + n.t, i: tr.counterInst || 'clarinet', m: n.m + T, d: n.d, v: .5 }));
   }
   // bass
@@ -42,8 +42,8 @@ function arrange(tr) {
   const near = (pc, lo, hi) => { let best = null; for (let m = lo; m <= hi; m++) if (((m % 12) + 12) % 12 === pc && (best === null || Math.abs(m - prev) < Math.abs(best - prev))) best = m; return best; };
   for (let beat = 0; beat < total; beat++) {
     const b = beat % beats, c = chordAt(b), nx = chordAt((b + 1) % beats), pos = b % 4, two = perBar[Math.floor(b / 4) % nb].length > 1;
-    if (tr.style === 'ballad' || tr.style === 'tag' || (tr.style === 'slow' && beat < beats)) {
-      if (pos === 0 || pos === 2) { const pc = pos === 0 || two ? c.bass : (c.root + c.iv[2]) % 12; const m = near(pc, 31, 48); prev = m; ev.push({ t: beat, i: 'bass', m, d: 1.85, v: .8 }); }
+    if (tr.style === 'ballad' || tr.style === 'tag' || tr.style === 'mellow' || (tr.style === 'slow' && beat < beats)) {
+      if (pos === 0 || pos === 2) { const pc = pos === 0 || two ? c.bass : (c.root + c.iv[2]) % 12; const m = near(pc, 31, 48); prev = m; ev.push({ t: beat, i: 'bass', m, d: 1.85, v: tr.style === 'mellow' ? .62 : .8 }); }
     } else {
       let pc; const changes = nx !== c || pos === 3;
       if (pos === 0 || (two && pos === 2)) pc = c.bass;
@@ -58,7 +58,11 @@ function arrange(tr) {
   for (let ch = 0; ch < choruses; ch++) perBar.forEach((cs, b) => cs.forEach((c, k) => {
     const t0 = ch * beats + b * 4 + k * (4 / cs.length), lp = leadIsPiano(ch), vs = voicing(c, lp ? 50 : 53, lp ? 62 : 69, tr.style === 'ballad' || tr.style === 'tag' ? 4 : 3);
     const vv = lp ? .55 : 1;
-    if (tr.style === 'ballad' || tr.style === 'tag' || tr.style === 'slow') {
+    if (tr.style === 'mellow') {
+      const v4 = voicing(c, lp ? 50 : 52, lp ? 62 : 67, 4);
+      v4.forEach((m, j) => ev.push({ t: t0 + j * .22, i: 'piano', m, d: cs.length > 1 ? 1.9 : 3.8, v: .2 * vv }));
+      if (cs.length === 1 && !lp) [1.5, 2.5, 3.5].forEach((h, j) => { if (rnd() < .7) ev.push({ t: t0 + h, i: 'piano', m: v4[(j + 1) % v4.length] + 12, d: 1.2, v: .09 }); });
+    } else if (tr.style === 'ballad' || tr.style === 'tag' || tr.style === 'slow') {
       vs.forEach((m, j) => ev.push({ t: t0 + j * .18, i: 'piano', m, d: cs.length > 1 ? 1.9 : 3.8, v: .3 * vv }));
       if (cs.length === 1 && !lp) ev.push({ t: t0 + 2.5, i: 'piano', m: vs[vs.length - 1] + 12, d: 1.4, v: .14 });
     } else if (tr.style === 'noir') {
@@ -70,6 +74,11 @@ function arrange(tr) {
   // drums: brushes, soft ride, hi-hat on 2 & 4, feathered kick
   for (let beat = 0; beat < total; beat++) {
     const pos = beat % 4;
+    if (tr.style === 'mellow') {
+      if (pos % 2 === 0) ev.push({ t: beat, i: 'swish', d: 2, v: .36 });
+      if (pos === 1 || pos === 3) ev.push({ t: beat, i: 'hat', v: .16 });
+      continue;
+    }
     if (tr.style === 'ballad' || tr.style === 'tag' || (tr.style === 'slow' && beat < beats)) {
       if (pos % 2 === 0) ev.push({ t: beat, i: 'swish', d: 2, v: .55 });
       if (pos === 1 || pos === 3) { ev.push({ t: beat, i: 'tap', v: .3 }); ev.push({ t: beat, i: 'hat', v: .35 }); }
@@ -188,7 +197,7 @@ function makeMaster(ctx, dest) {
     if (on && !hissSrc) { const b = ctx.createBuffer(1, sr * 2, sr), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; hissSrc = ctx.createBufferSource(); hissSrc.buffer = b; hissSrc.loop = true; const g = ctx.createGain(); g.gain.value = .0035; const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 3500; f.Q.value = .5; hissSrc.connect(f); f.connect(g); g.connect(lp); hissSrc.start(); }
     else if (!on && hissSrc) { try { hissSrc.stop(); } catch (e) {} hissSrc = null; }
   };
-  return { dry, wet, out, hiss };
+  return { dry, wet, out, hiss, lp };
 }
 
 /* ---------------- sequencer core (shared by both games' players) ---------------- */
@@ -204,7 +213,7 @@ function Core(TRACKS) {
     [fade, wet].forEach(g => { g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(1, t + (fadeIn || .05)); });
     fade.connect(M.dry); wet.connect(M.wet);
     cur = { id, tr, fade, wet, inst: Engine(ctx, fade, wet), arr: ARR[id], spb: 60 / tr.bpm, loopStart: t + .12, idx: 0, loops: 0 };
-    onEnd = endCb || null; M.hiss(true);
+    onEnd = endCb || null; M.hiss(true); M.lp.frequency.setTargetAtTime(tr.lp || 7200, t, .3);
     tick(); if (!timer) timer = setInterval(tick, 50);
   }
   function stopCur(sec) {
@@ -235,7 +244,7 @@ function Core(TRACKS) {
   function render(id, secs, sr, only) {
     const OC = window.OfflineAudioContext || window.webkitOfflineAudioContext; sr = sr || 22050;
     const oc = new OC(2, Math.ceil(sr * secs), sr), g = oc.createGain(); g.gain.value = 1.05 * .5; g.connect(oc.destination);
-    const m = makeMaster(oc, g), tr = TRACKS[id], arr = ARR[id], inst = Engine(oc, m.dry, m.wet), spb = 60 / tr.bpm; m.hiss(true);
+    const m = makeMaster(oc, g), tr = TRACKS[id], arr = ARR[id], inst = Engine(oc, m.dry, m.wet), spb = 60 / tr.bpm; m.hiss(true); m.lp.frequency.value = tr.lp || 7200;
     for (let loop = 0; loop * arr.beats * spb < secs; loop++) { arr.ev.forEach(e => { if (only && only.indexOf(e.i) < 0) return; const at = loop * arr.beats * spb + swingT(e.t, tr.swing) * spb + .05; if (at < secs - .1) inst[e.i](at, e.m, (e.d || .5) * spb, e.v); }); if (tr.once) break; }
     if (!only) for (let t = .2; t < secs; t += .25 + Math.random() * .5) inst.crackle(t); else m.hiss(false);
     return oc.startRendering ? new Promise((res, rej) => { const p = oc.startRendering(); if (p && p.then) p.then(res, rej); else oc.oncomplete = e => res(e.renderedBuffer); }) : null;

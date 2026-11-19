@@ -597,10 +597,16 @@ function unlockAudio() {
   } catch (e) {}
 }
 // every gesture: (re)unlock if the context isn't running (first tap, after background, iOS "interrupted"), keep the iOS session alive
-['touchend', 'pointerdown', 'keydown', 'click'].forEach(t => document.addEventListener(t, () => { if (!AC || AC.state !== 'running') { unlockAudio(); setTimeout(bgmTick, 0); } else if (IOS_REAL && !navigator.audioSession && !iosElFailed && (!iosEl || iosEl.paused)) iosSession(); }, { passive: true, capture: true }));
+['touchend', 'pointerdown', 'keydown', 'click'].forEach(t => document.addEventListener(t, () => { appHidden = false; if (!AC || AC.state !== 'running') { unlockAudio(); bgmTick(); setTimeout(bgmTick, 0); } else if (IOS_REAL && !navigator.audioSession && !iosElFailed && (!iosEl || iosEl.paused)) iosSession(); }, { passive: true, capture: true }));
 /* ---------------- BGM (old-jazz, synthesized by the music engine) ---------------- */
 const MUS = window.IrukaMusic || null;
 let bgmClearDone = null; // the game whose clear jingle has finished
+// v1.6.2: the Android app tells us when it really goes to the background (appPause/appResume from MainActivity).
+// Inside the app WebView document.hidden is not trusted for the BGM (some WebViews report it wrongly), and a
+// suspended AudioContext is resumed again automatically (the WebView needs no tap for that).
+const IN_APP = location.protocol === 'file:';
+let appHidden = false, acRetry = 0, bgmErr = '';
+const pageHidden = () => appHidden || (!IN_APP && document.hidden);
 function bgmWanted() {
   if (!S || !$('ovPause').hidden) return null;
   if (!$('ovTitle').hidden) return 'title';
@@ -609,15 +615,33 @@ function bgmWanted() {
 }
 function bgmTick() {
   if (!MUS) return;
-  const on = opts.bgm !== false && AC && AC.state === 'running' && !document.hidden;
+  try {
+  if (opts.bgm !== false && AC && AC.state !== 'running' && AC.state !== 'closed' && !pageHidden() && (IN_APP || AC.__wasRunning) && Date.now() - acRetry > 1500) {
+    acRetry = Date.now(); const pr = AC.resume(); if (pr && pr.then) pr.then(() => bgmTick(), e => { bgmErr = 'resume: ' + e; });
+  }
+  if (AC && AC.state === 'running') AC.__wasRunning = true;
+  const on = opts.bgm !== false && AC && AC.state === 'running' && !pageHidden();
   if (!on) { if (MUS.current) MUS.stop(true); return; }
   MUS.attach(AC); MUS.setVolume(typeof opts.bgmVol === 'number' ? opts.bgmVol : .5); MUS.setDuck($('ovMenu').hidden ? 1 : .45);
   const w = bgmWanted();
   if (!w) { if (MUS.current) MUS.stop(); return; }
   if (w === 'clear') { if (MUS.current !== 'clear') { const G = S; MUS.play('clear', () => { bgmClearDone = G; }); } return; }
   MUS.play(w);
+  } catch (e) { bgmErr = String(e && e.message || e); }
 }
 setInterval(bgmTick, 300);
+function appPause() { appHidden = true; try { if (S) { pause(); save(); } } catch (e) {} try { if (MUS && MUS.current) MUS.stop(true); iosSessionSleep(); if (AC && AC.state === 'running') AC.suspend(); } catch (e) {} }
+function appResume() { appHidden = false; try { if (AC && AC.state !== 'running') { const pr = AC.resume(); if (pr && pr.then) pr.then(() => bgmTick(), () => {}); } } catch (e) {} bgmTick(); }
+// hidden 診断: tap the version label 5 times → audio/BGM state (for 'BGMが鳴らない' reports)
+function audioDiag() {
+  let ov = document.getElementById('ovDiag');
+  if (!ov) { ov = document.createElement('div'); ov.id = 'ovDiag'; ov.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;z-index:9999;background:rgba(10,20,40,.93);color:#fff;font:12px/1.5 monospace;padding:10px 12px;border-radius:10px;white-space:pre-wrap;word-break:break-all'; ov.onclick = () => ov.remove(); document.body.appendChild(ov); }
+  const lines = ['診断情報 (タップで閉じる)', 'v' + VERSION + (IN_APP ? ' アプリ版' : ' WEB版'), 'music.js: ' + (MUS ? 'OK' : 'なし'), 'AudioContext: ' + (AC ? AC.state + ' ' + AC.sampleRate + 'Hz t=' + AC.currentTime.toFixed(1) : '未作成'),
+    'BGM設定: ' + (opts.bgm !== false ? 'ON' : 'OFF') + ' 音量 ' + Math.round((typeof opts.bgmVol === 'number' ? opts.bgmVol : .5) * 100), '再生中: ' + (MUS && MUS.current || '-') + ' / 予定: ' + (bgmWanted() || '-'),
+    'hidden: doc=' + document.hidden + ' app=' + appHidden, bgmErr ? 'err: ' + bgmErr : '', navigator.userAgent];
+  ov.textContent = lines.filter(Boolean).join('\n');
+}
+(() => { let n = 0, t0 = 0; const v = document.getElementById('tVer'); if (v) v.addEventListener('click', () => { const now = Date.now(); if (now - t0 > 1500) n = 0; t0 = now; if (++n >= 5) { n = 0; audioDiag(); } }); })();
 // iOS ignores user-scalable=no: block page pinch-zoom gestures (the zoomed board pans natively; 🔍 does the zooming)
 ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));
 function sfx(kind) {
@@ -795,13 +819,13 @@ window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(layo
 if (window.ResizeObserver) new ResizeObserver(() => { clearTimeout(rT); rT = setTimeout(layout, 60); }).observe(board);
 // auto-pause when the app goes to the background
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { if (MUS) MUS.stop(true); iosSessionSleep(); try { if (AC && AC.state === 'running') AC.suspend(); } catch (e) {} }
-  else { try { if (AC && AC.state !== 'running') { const pr = AC.resume(); if (pr && pr.then) pr.then(() => bgmTick(), () => {}); } } catch (e) {} } // the next tap retries if iOS refuses
+  if (document.hidden && !IN_APP) { if (MUS) MUS.stop(true); iosSessionSleep(); try { if (AC && AC.state === 'running') AC.suspend(); } catch (e) {} }
+  else if (!document.hidden) { try { if (AC && AC.state !== 'running') { const pr = AC.resume(); if (pr && pr.then) pr.then(() => bgmTick(), () => {}); } } catch (e) {} } // the next tap retries if iOS refuses
   if (document.hidden && S) { pause(); save(); }
 });
 
 /* ---------------- start ---------------- */
-const VERSION = '1.6.1';
+const VERSION = '1.6.2';
 (() => { const v = document.getElementById('tVer'); if (v) v.textContent = `v${VERSION}・${location.protocol === 'file:' ? 'アプリ版' : 'WEB版'}${MUS ? '・BGMあり' : ''}`; })();
 loadOpts();
 let saved = null;
@@ -814,5 +838,5 @@ requestAnimationFrame(() => {
 });
 
 // test hook (used by automated tests; harmless for players)
-window.__shanghai = { version: VERSION, get bgm() { return MUS ? MUS.current : 'none'; }, bgmTick, get audioState() { return AC ? AC.state : "none"; }, get iosAudio() { return { ios: IOS, session: navigator.audioSession ? navigator.audioSession.type : null, el: iosEl ? (iosEl.paused ? 'paused' : 'playing') : null }; }, pause, resume, setZoom, toggleZoom, get tileW() { return layout.W; }, get fitW() { return layout.fit; }, tapSlot, park, magnet, banner, get selSlot() { return selSlot; }, get sel() { return sel; }, SLOTS, pal, showTitle, shanghaiIQ, loadRank, showRanking, get S() { return S; }, get lastOrder() { return lastOrder; }, opts, group, faceSVG, save, LAYOUTS, movePairs, tap, newGame, shuffleRemaining, undo, isFreeAt: i => isFree(NB, S.alive, i) };
+window.__shanghai = { version: VERSION, appPause, appResume, audioDiag, get bgm() { return MUS ? MUS.current : 'none'; }, bgmTick, get audioState() { return AC ? AC.state : "none"; }, get iosAudio() { return { ios: IOS, session: navigator.audioSession ? navigator.audioSession.type : null, el: iosEl ? (iosEl.paused ? 'paused' : 'playing') : null }; }, pause, resume, setZoom, toggleZoom, get tileW() { return layout.W; }, get fitW() { return layout.fit; }, tapSlot, park, magnet, banner, get selSlot() { return selSlot; }, get sel() { return sel; }, SLOTS, pal, showTitle, shanghaiIQ, loadRank, showRanking, get S() { return S; }, get lastOrder() { return lastOrder; }, opts, group, faceSVG, save, LAYOUTS, movePairs, tap, newGame, shuffleRemaining, undo, isFreeAt: i => isFree(NB, S.alive, i) };
 })();
